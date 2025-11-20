@@ -39,7 +39,9 @@ function resolveBinaryPath() {
     if (process.env.SLACK_MCP_DXT) {
         return require.resolve(path.join(__dirname, `${binary.name}${binary.suffix}`));
     } else {
-        return require.resolve(`${binary.name}/bin/${binary.name}${binary.suffix}`);
+        // Remove scope from binary file name
+        const binaryFileName = binary.name.replace('@rokrokss/', '');
+        return require.resolve(`${binary.name}/bin/${binaryFileName}${binary.suffix}`);
     }
 }
 
