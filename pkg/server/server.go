@@ -134,8 +134,9 @@ func NewMCPServer(provider *provider.ApiProvider, logger *zap.Logger) *MCPServer
 			mcp.Description("The maximum number of items to return. Must be an integer between 1 and 100."),
 		),
 	)
-	// Only register search tool for non-bot tokens (bot tokens cannot use search.messages API)
-	if !provider.IsBotToken() {
+	// Only register search tool if search capability is available
+	// (search is available when xoxp token is provided, either as main token or as separate search token)
+	if provider.HasSearchCapability() {
 		s.AddTool(conversationsSearchTool, conversationsHandler.ConversationsSearchHandler)
 	}
 

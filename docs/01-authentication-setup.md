@@ -2,7 +2,7 @@
 
 Open up your Slack in your browser and login.
 
-> **Note**: You only need one of the following: an `xoxp-*` User OAuth token, an `xoxb-*` Bot token, or both `xoxc-*` and `xoxd-*` session tokens. User/Bot tokens are more secure and do not require a browser session. If multiple are provided, priority is `xoxp` > `xoxb` > `xoxc/xoxd`.
+> **Note**: You need one of the following: an `xoxp-*` User OAuth token, an `xoxb-*` Bot token, or both `xoxc-*` and `xoxd-*` session tokens. For full functionality including search, you can combine `xoxb` (bot) + `xoxp` (user) tokens. User/Bot tokens are more secure and do not require a browser session. If multiple are provided, priority is `xoxb` > `xoxp` > `xoxc/xoxd`.
 
 #### Option 1: Using `SLACK_MCP_XOXC_TOKEN`/`SLACK_MCP_XOXD_TOKEN` (Browser session)
 
@@ -88,15 +88,44 @@ To create the app from a manifest with permissions preconfigured, use the follow
 
 #### Option 3: Using `SLACK_MCP_XOXB_TOKEN` (Bot Token)
 
-You can also use a Bot token instead of a User token:
+You can use a Bot token, which is the recommended approach for general API calls:
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) and create a new app
-2. Under "OAuth & Permissions", add Bot Token Scopes (same as User scopes above, except `search:read`)
+2. Under "OAuth & Permissions", add Bot Token Scopes:
+    - `channels:history` - View messages in public channels
+    - `channels:read` - View basic information about public channels
+    - `groups:history` - View messages in private channels
+    - `groups:read` - View basic information about private channels
+    - `im:history` - View messages in direct messages
+    - `im:read` - View basic information about direct messages
+    - `im:write` - Start direct messages with people
+    - `mpim:history` - View messages in group direct messages
+    - `mpim:read` - View basic information about group direct messages
+    - `mpim:write` - Start group direct messages with people
+    - `users:read` - View people in a workspace
+    - `chat:write` - Send messages as the bot
 3. Install the app to your workspace
 4. Copy the "Bot User OAuth Token" (starts with `xoxb-`)
 5. **Important**: Bot must be invited to channels for access
 
-> **Note**: Bot tokens cannot use `search.messages` API, so `conversations_search_messages` tool will not be available.
+> **Note**: Bot tokens cannot use the `search.messages` API. To enable search functionality, see Option 4 below.
 
+#### Option 4: Using Both `SLACK_MCP_XOXB_TOKEN` and `SLACK_MCP_XOXP_TOKEN` (Recommended)
+
+For full functionality including search, use both Bot and User OAuth tokens together:
+
+1. Create an app following steps from Option 3 to get your Bot token (`xoxb-`)
+2. In the same app, under "OAuth & Permissions", add User Token Scopes:
+    - `search:read` - Search a workspace's content (required for search functionality)
+    - Optionally add other user scopes if you want user-level permissions
+3. Install/reinstall the app to your workspace
+4. Copy both tokens:
+    - "Bot User OAuth Token" for `SLACK_MCP_XOXB_TOKEN`
+    - "User OAuth Token" for `SLACK_MCP_XOXP_TOKEN`
+
+**How it works:**
+- General API calls (messages, channels, users) use the Bot token
+- Search API calls automatically use the User OAuth token
+- You get the security of bot-scoped permissions for most operations while enabling search
 
 See next: [Installation](02-installation.md)

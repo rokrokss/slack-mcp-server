@@ -10,7 +10,7 @@ import (
 
 	"github.com/korotovsky/slack-mcp-server/pkg/limiter"
 	"github.com/korotovsky/slack-mcp-server/pkg/provider/edge"
-	"github.com/korotovsky/slack-mcp-server/pkg/transport"
+	transportpkg "github.com/korotovsky/slack-mcp-server/pkg/transport"
 	"github.com/rusq/slackdump/v3/auth"
 	"github.com/slack-go/slack"
 	"go.uber.org/zap"
@@ -74,6 +74,7 @@ type SlackAPI interface {
 
 type MCPSlackClient struct {
 	slackClient *slack.Client
+	xoxpClient  *slack.Client // Separate client for search API (User OAuth token)
 	edgeClient  *edge.Client
 
 	authResponse *slack.AuthTestResponse
@@ -104,7 +105,7 @@ type ApiProvider struct {
 }
 
 func NewMCPSlackClient(authProvider auth.Provider, logger *zap.Logger) (*MCPSlackClient, error) {
-	httpClient := transport.ProvideHTTPClient(authProvider.Cookies(), logger)
+	httpClient := transportpkg.ProvideHTTPClient(authProvider.Cookies(), logger)
 
 	slackClient := slack.New(authProvider.SlackToken(),
 		slack.OptionHTTPClient(httpClient),
@@ -260,6 +261,11 @@ func (c *MCPSlackClient) GetConversationRepliesContext(ctx context.Context, para
 }
 
 func (c *MCPSlackClient) SearchContext(ctx context.Context, query string, params slack.SearchParameters) (*slack.SearchMessages, *slack.SearchFiles, error) {
+	// Use xoxpClient if available (for search API when main token is bot token)
+	// Otherwise use the default slackClient
+	if c.xoxpClient != nil {
+		return c.xoxpClient.SearchContext(ctx, query, params)
+	}
 	return c.slackClient.SearchContext(ctx, query, params)
 }
 
@@ -281,6 +287,11 @@ func (c *MCPSlackClient) AuthResponse() *slack.AuthTestResponse {
 
 func (c *MCPSlackClient) IsBotToken() bool {
 	return c.isBotToken
+}
+
+func (c *MCPSlackClient) HasSearchCapability() bool {
+	// Search is available if we have xoxpClient OR if the main client is not a bot token
+	return c.xoxpClient != nil || !c.isBotToken
 }
 
 func (c *MCPSlackClient) Raw() struct {
@@ -308,27 +319,17 @@ func New(transport string, logger *zap.Logger) *ApiProvider {
 	xoxcToken := os.Getenv("SLACK_MCP_XOXC_TOKEN")
 	xoxdToken := os.Getenv("SLACK_MCP_XOXD_TOKEN")
 
-	// Warn if both user and bot tokens are set
+	// Info if both user and bot tokens are set
 	if xoxpToken != "" && xoxbToken != "" {
-		logger.Warn(
+		logger.Info(
 			"Both SLACK_MCP_XOXP_TOKEN and SLACK_MCP_XOXB_TOKEN are set. "+
-				"Using User token (xoxp) for full features. "+
-				"Bot token will be ignored.",
+				"Using Bot token (xoxb) for general API calls. "+
+				"Using User token (xoxp) for search API.",
 			zap.String("context", "console"),
 		)
 	}
 
-	// Priority 1: XOXP token (User OAuth)
-	if xoxpToken != "" {
-		authProvider, err = auth.NewValueAuth(xoxpToken, "")
-		if err != nil {
-			logger.Fatal("Failed to create auth provider with XOXP token", zap.Error(err))
-		}
-
-		return newWithXOXP(transport, authProvider, logger)
-	}
-
-	// Priority 2: XOXB token (Bot)
+	// Priority 1: XOXB token (Bot) - preferred for general API calls
 	if xoxbToken != "" {
 		authProvider, err = auth.NewValueAuth(xoxbToken, "")
 		if err != nil {
@@ -340,7 +341,17 @@ func New(transport string, logger *zap.Logger) *ApiProvider {
 			zap.String("token_type", "xoxb"),
 		)
 
-		return newWithXOXB(transport, authProvider, logger)
+		return newWithXOXB(transport, authProvider, xoxpToken, logger)
+	}
+
+	// Priority 2: XOXP token (User OAuth)
+	if xoxpToken != "" {
+		authProvider, err = auth.NewValueAuth(xoxpToken, "")
+		if err != nil {
+			logger.Fatal("Failed to create auth provider with XOXP token", zap.Error(err))
+		}
+
+		return newWithXOXP(transport, authProvider, "", logger)
 	}
 
 	// Priority 3: XOXC/XOXD tokens (session-based)
@@ -353,10 +364,10 @@ func New(transport string, logger *zap.Logger) *ApiProvider {
 		logger.Fatal("Failed to create auth provider with XOXC/XOXD tokens", zap.Error(err))
 	}
 
-	return newWithXOXC(transport, authProvider, logger)
+	return newWithXOXC(transport, authProvider, "", logger)
 }
 
-func newWithXOXP(transport string, authProvider auth.ValueAuth, logger *zap.Logger) *ApiProvider {
+func newWithXOXP(transport string, authProvider auth.ValueAuth, xoxpTokenForSearch string, logger *zap.Logger) *ApiProvider {
 	var (
 		client *MCPSlackClient
 		err    error
@@ -379,6 +390,27 @@ func newWithXOXP(transport string, authProvider auth.ValueAuth, logger *zap.Logg
 		if err != nil {
 			logger.Fatal("Failed to create MCP Slack client", zap.Error(err))
 		}
+
+		// If xoxpTokenForSearch is provided, create a separate client for search
+		// (This is used when main token is xoxb but we have xoxp for search)
+		if xoxpTokenForSearch != "" && client != nil {
+			xoxpAuthProvider, err := auth.NewValueAuth(xoxpTokenForSearch, "")
+			if err != nil {
+				logger.Warn("Failed to create search auth provider with XOXP token", zap.Error(err))
+			} else {
+				httpClient := transportpkg.ProvideHTTPClient(xoxpAuthProvider.Cookies(), logger)
+				authResp, err := slack.New(xoxpAuthProvider.SlackToken()).AuthTest()
+				if err != nil {
+					logger.Warn("Failed to authenticate XOXP token for search", zap.Error(err))
+				} else {
+					client.xoxpClient = slack.New(xoxpAuthProvider.SlackToken(),
+						slack.OptionHTTPClient(httpClient),
+						slack.OptionAPIURL(authResp.URL+"api/"),
+					)
+					logger.Info("Configured separate XOXP client for search API")
+				}
+			}
+		}
 	}
 
 	return &ApiProvider{
@@ -398,13 +430,13 @@ func newWithXOXP(transport string, authProvider auth.ValueAuth, logger *zap.Logg
 	}
 }
 
-func newWithXOXB(transport string, authProvider auth.ValueAuth, logger *zap.Logger) *ApiProvider {
+func newWithXOXB(transport string, authProvider auth.ValueAuth, xoxpTokenForSearch string, logger *zap.Logger) *ApiProvider {
 	// Bot tokens do not support demo mode, but otherwise share the same
 	// initialization logic as user OAuth tokens.
-	return newWithXOXP(transport, authProvider, logger)
+	return newWithXOXP(transport, authProvider, xoxpTokenForSearch, logger)
 }
 
-func newWithXOXC(transport string, authProvider auth.ValueAuth, logger *zap.Logger) *ApiProvider {
+func newWithXOXC(transport string, authProvider auth.ValueAuth, xoxpTokenForSearch string, logger *zap.Logger) *ApiProvider {
 	var (
 		client *MCPSlackClient
 		err    error
@@ -742,6 +774,11 @@ func (ap *ApiProvider) Slack() SlackAPI {
 func (ap *ApiProvider) IsBotToken() bool {
 	client, ok := ap.client.(*MCPSlackClient)
 	return ok && client != nil && client.IsBotToken()
+}
+
+func (ap *ApiProvider) HasSearchCapability() bool {
+	client, ok := ap.client.(*MCPSlackClient)
+	return ok && client != nil && client.HasSearchCapability()
 }
 
 func mapChannel(

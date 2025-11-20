@@ -61,7 +61,7 @@ Add a message to a public channel, private channel, or direct message (DM, or IM
 ### 4. conversations_search_messages
 Search messages in a public channel, private channel, or direct message (DM, or IM) conversation using filters. All filters are optional, if not provided then search_query is required.
 
-> **Note**: This tool is not available when using bot tokens (`xoxb-*`). Bot tokens cannot use the `search.messages` API.
+> **Note**: This tool requires a User OAuth token (`xoxp-*`). If using a bot token (`xoxb-*`) as the main token, you can still enable search by also providing `SLACK_MCP_XOXP_TOKEN`.
 - **Parameters:**
   - `search_query` (string, optional): Search query to filter messages. Example: 'marketing report' or full URL of Slack message e.g. 'https://slack.com/archives/C1234567890/p1234567890123456', then the tool will return a single message matching given URL, herewith all other parameters will be ignored.
   - `filter_in_channel` (string, optional): Filter messages in a specific channel by its ID or name. Example: `C1234567890` or `#general`. If not provided, all channels will be searched.
@@ -124,8 +124,8 @@ Fetches a CSV directory of all users in the workspace.
 |-----------------------------------|-----------|---------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `SLACK_MCP_XOXC_TOKEN`            | Yes*      | `nil`                     | Slack browser token (`xoxc-...`)                                                                                                                                                                                                                                                          |
 | `SLACK_MCP_XOXD_TOKEN`            | Yes*      | `nil`                     | Slack browser cookie `d` (`xoxd-...`)                                                                                                                                                                                                                                                     |
-| `SLACK_MCP_XOXP_TOKEN`            | Yes*      | `nil`                     | User OAuth token (`xoxp-...`) — alternative to xoxc/xoxd                                                                                                                                                                                                                                  |
-| `SLACK_MCP_XOXB_TOKEN`            | Yes*      | `nil`                     | Bot token (`xoxb-...`) — alternative to xoxp/xoxc/xoxd. Bot has limited access (invited channels only, no search)                                                                                                                                                                         |
+| `SLACK_MCP_XOXP_TOKEN`            | No**      | `nil`                     | User OAuth token (`xoxp-...`) — can be used as main token OR as search-only token when `SLACK_MCP_XOXB_TOKEN` is set                                                                                                                                                                     |
+| `SLACK_MCP_XOXB_TOKEN`            | Yes*      | `nil`                     | Bot token (`xoxb-...`) — preferred for general API calls. Bot has limited access (invited channels only). Combine with `SLACK_MCP_XOXP_TOKEN` to enable search                                                                                                                            |
 | `SLACK_MCP_PORT`                  | No        | `13080`                   | Port for the MCP server to listen on                                                                                                                                                                                                                                                      |
 | `SLACK_MCP_HOST`                  | No        | `127.0.0.1`               | Host for the MCP server to listen on                                                                                                                                                                                                                                                      |
 | `SLACK_MCP_API_KEY`               | No        | `nil`                     | Bearer token for SSE and HTTP transports                                                                                                                                                                                                                                                            |
@@ -143,6 +143,8 @@ Fetches a CSV directory of all users in the workspace.
 | `SLACK_MCP_LOG_LEVEL`             | No        | `info`                    | Log-level for stdout or stderr. Valid values are: `debug`, `info`, `warn`, `error`, `panic` and `fatal`                                                                                                                                                                                   |
 
 *You need one of: `xoxp` (user), `xoxb` (bot), or both `xoxc`/`xoxd` tokens for authentication.
+
+**For full functionality including search, use `xoxb` (bot) + `xoxp` (user) tokens together, or just `xoxp` alone.
 
 ### Limitations matrix & Cache
 
