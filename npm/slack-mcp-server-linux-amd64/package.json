@@ -1,6 +1,6 @@
 {
   "name": "@rokrokss/slack-mcp-server-linux-amd64",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "Model Context Protocol (MCP) server for Slack Workspaces. This integration supports both Stdio and SSE transports, proxy settings and does not require any permissions or bots being created or approved by Workspace admins",
   "os": [
     "linux"
