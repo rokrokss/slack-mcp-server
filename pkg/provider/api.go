@@ -29,6 +29,19 @@ var PubChanType = "public_channel"
 var ErrUsersNotReady = errors.New(usersNotReadyMsg)
 var ErrChannelsNotReady = errors.New(channelsNotReadyMsg)
 
+// excludedChannels is a map of channel names to exclude from search results
+var excludedChannels = func() map[string]bool {
+	m := make(map[string]bool)
+	if env := os.Getenv("SLACK_EXCLUDED_CHANNELS"); env != "" {
+		for _, ch := range strings.Split(env, ",") {
+			if trimmed := strings.TrimSpace(ch); trimmed != "" {
+				m[trimmed] = true
+			}
+		}
+	}
+	return m
+}()
+
 // getCacheDir returns the appropriate cache directory for slack-mcp-server
 func getCacheDir() string {
 	cacheDir, err := os.UserCacheDir()
@@ -93,6 +106,7 @@ type MCPSlackClient struct {
 	slackClient *slack.Client
 	xoxpClient  *slack.Client // Separate client for search API (User OAuth token)
 	edgeClient  *edge.Client
+	logger      *zap.Logger
 
 	authResponse *slack.AuthTestResponse
 	authProvider auth.Provider
@@ -167,6 +181,7 @@ func NewMCPSlackClient(authProvider auth.Provider, logger *zap.Logger) (*MCPSlac
 	return &MCPSlackClient{
 		slackClient:  slackClient,
 		edgeClient:   edgeClient,
+		logger:       logger,
 		authResponse: authResponse,
 		authProvider: authProvider,
 		isEnterprise: isEnterprise,
@@ -281,7 +296,24 @@ func (c *MCPSlackClient) SearchContext(ctx context.Context, query string, params
 	// Use xoxpClient if available (for search API when main token is bot token)
 	// Otherwise use the default slackClient
 	if c.xoxpClient != nil {
-		return c.xoxpClient.SearchContext(ctx, query, params)
+		searchMessages, searchFiles, err := c.xoxpClient.SearchContext(ctx, query, params)
+		if err != nil {
+			return nil, nil, err
+		}
+		// Filter out messages from excluded channels (from SLACK_EXCLUDED_CHANNELS env var)
+		if len(excludedChannels) > 0 && searchMessages != nil {
+			filteredMatches := make([]slack.SearchMessage, 0, len(searchMessages.Matches))
+			for _, msg := range searchMessages.Matches {
+				if !excludedChannels[msg.Channel.Name] {
+					filteredMatches = append(filteredMatches, msg)
+				} else {
+					c.logger.Info("Excluded channel: " + msg.Channel.Name)
+				}
+			}
+			searchMessages.Matches = filteredMatches
+			searchMessages.Total = len(filteredMatches)
+		}
+		return searchMessages, searchFiles, err
 	}
 	return c.slackClient.SearchContext(ctx, query, params)
 }
