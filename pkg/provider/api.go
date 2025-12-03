@@ -42,6 +42,18 @@ var excludedChannels = func() map[string]bool {
 	return m
 }()
 
+var excludedChannelIds = func() map[string]bool {
+	m := make(map[string]bool)
+	if env := os.Getenv("SLACK_EXCLUDED_CHANNEL_IDS"); env != "" {
+		for _, ch := range strings.Split(env, ",") {
+			if trimmed := strings.TrimSpace(ch); trimmed != "" {
+				m[trimmed] = true
+			}
+		}
+	}
+	return m
+}()
+
 // getCacheDir returns the appropriate cache directory for slack-mcp-server
 func getCacheDir() string {
 	cacheDir, err := os.UserCacheDir()
@@ -301,10 +313,10 @@ func (c *MCPSlackClient) SearchContext(ctx context.Context, query string, params
 			return nil, nil, err
 		}
 		// Filter out messages from excluded channels (from SLACK_EXCLUDED_CHANNELS env var)
-		if len(excludedChannels) > 0 && searchMessages != nil {
+		if (len(excludedChannels) > 0 || len(excludedChannelIds) > 0) && searchMessages != nil {
 			filteredMatches := make([]slack.SearchMessage, 0, len(searchMessages.Matches))
 			for _, msg := range searchMessages.Matches {
-				if !excludedChannels[msg.Channel.Name] {
+				if !excludedChannels[msg.Channel.Name] && !excludedChannelIds[msg.Channel.ID] {
 					filteredMatches = append(filteredMatches, msg)
 				} else {
 					c.logger.Info("Excluded channel: " + msg.Channel.Name)
