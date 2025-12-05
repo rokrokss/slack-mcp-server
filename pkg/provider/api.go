@@ -317,7 +317,7 @@ func (c *MCPSlackClient) SearchContext(ctx context.Context, query string, params
 			filteredMatches := make([]slack.SearchMessage, 0, len(searchMessages.Matches))
 			for _, msg := range searchMessages.Matches {
 				// Skip DM channels (channel IDs starting with "D")
-				if strings.HasPrefix(msg.Channel.ID, "D") {
+				if strings.HasPrefix(msg.Channel.ID, "D") || strings.HasPrefix(msg.Channel.ID, "d") {
 					c.logger.Info("Excluded DM channel: " + msg.Channel.ID)
 					continue
 				}
