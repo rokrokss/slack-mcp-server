@@ -312,15 +312,21 @@ func (c *MCPSlackClient) SearchContext(ctx context.Context, query string, params
 		if err != nil {
 			return nil, nil, err
 		}
-		// Filter out messages from excluded channels (from SLACK_EXCLUDED_CHANNELS env var)
-		if (len(excludedChannels) > 0 || len(excludedChannelIds) > 0) && searchMessages != nil {
+		// Filter out messages from excluded channels and DMs
+		if searchMessages != nil {
 			filteredMatches := make([]slack.SearchMessage, 0, len(searchMessages.Matches))
 			for _, msg := range searchMessages.Matches {
-				if !excludedChannels[msg.Channel.Name] && !excludedChannelIds[msg.Channel.ID] {
-					filteredMatches = append(filteredMatches, msg)
-				} else {
-					c.logger.Info("Excluded channel: " + msg.Channel.Name)
+				// Skip DM channels (channel IDs starting with "D")
+				if strings.HasPrefix(msg.Channel.ID, "D") {
+					c.logger.Info("Excluded DM channel: " + msg.Channel.ID)
+					continue
 				}
+				// Skip excluded channels (from SLACK_EXCLUDED_CHANNELS env var)
+				if excludedChannels[msg.Channel.Name] || excludedChannelIds[msg.Channel.ID] {
+					c.logger.Info("Excluded channel: " + msg.Channel.Name)
+					continue
+				}
+				filteredMatches = append(filteredMatches, msg)
 			}
 			searchMessages.Matches = filteredMatches
 			searchMessages.Total = len(filteredMatches)
